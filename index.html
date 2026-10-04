@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- Шрифт Great Vibes: SIL Open Font License 1.1, (c) The Great Vibes Pro Project Authors -->
 <meta name="theme-color" content="#f3f2ef">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Infant:ital,wght@1,500&family=Great+Vibes&display=swap">
 <style>
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; padding-top: calc(20px + env(safe-area-inset-top, 0px)); padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
@@ -139,7 +139,16 @@ canvas { display: block; width: 100%; height: auto; }
           <button type="button" data-mode="outline" aria-pressed="false">Контур</button>
         </div>
       </div>
+      <div class="row">
+        <span class="row-top">Шрифт</span>
+        <div class="seg" id="face">
+          <button type="button" data-face="auto" aria-pressed="true">Авто</button>
+          <button type="button" data-face="script" aria-pressed="false">Пропись</button>
+          <button type="button" data-face="print" aria-pressed="false">Печатные</button>
+        </div>
+      </div>
     </div>
+    <p class="hint" style="margin:0">Авто: строки без строчных букв (коды, даты, цифры) — печатным курсивом.</p>
     <div class="toggles">
       <label><input type="checkbox" id="gLines" checked>Линейки</label>
       <label><input type="checkbox" id="gSlant" checked>Наклонные</label>
@@ -171,6 +180,19 @@ let mode = "ink";
 // Цвета листа (лист всегда светлый, поэтому цвета фиксированы)
 const C = { paper: "#fcfbf8", ink: "#1b1a18", trace: "#bdb8ae", base: "#1b1a18", xh: "#b0724a", asc: "#c9c4ba", slant: "#e6e2da" };
 const FONT = '"Great Vibes", cursive';
+const FONT_P = '"Cormorant Infant", Georgia, serif'; // печатный курсив
+let face = "auto";
+
+// Какой шрифт для строки: в режиме «Авто» печатный, если нет строчных букв
+function isPrint(line) {
+  if (face === "print") return true;
+  if (face === "script") return false;
+  return line.trim() !== "" && !/[a-zа-яё]/.test(line);
+}
+// Строка шрифта для canvas. Печатный чуть крупнее, чтобы заглавные доходили до верхней линейки
+function fontStr(line, fs) {
+  return isPrint(line) ? `italic 500 ${Math.round(fs * 0.62)}px ${FONT_P}` : `${fs}px ${FONT}`;
+}
 
 // ===== Сохраняем последний текст на этом телефоне (если браузер разрешает) =====
 try { const saved = localStorage.getItem("zm-propis-text"); if (saved) txt.value = saved; } catch (e) {}
@@ -195,10 +217,20 @@ document.querySelectorAll("#mode button").forEach(b => {
   };
 });
 
+// ===== Переключатель шрифта =====
+document.querySelectorAll("#face button").forEach(b => {
+  b.onclick = () => {
+    face = b.dataset.face;
+    document.querySelectorAll("#face button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    draw();
+  };
+});
+
 // ===== Перенос слов, если строка не влезает в ширину =====
 function wrapLines(text, maxW) {
   const out = [];
   text.split("\n").forEach(par => {
+    ctx.font = fontStr(par, +size.value); // меряем тем шрифтом, которым строка будет нарисована
     const words = par.split(" ");
     let line = "";
     words.forEach(w => {
@@ -258,7 +290,8 @@ function draw() {
       hLine(base, C.base, 1.2, cssW);
       hLine(base + descH, C.asc, 1, cssW);
     }
-    ctx.font = `${fs}px ${FONT}`;
+    ctx.font = fontStr(line, fs);
+    if (isPrint(line)) ctx.font = fitPrint(line, fs, ascH);
     if (mode === "outline") {
       ctx.strokeStyle = C.ink; ctx.lineWidth = Math.max(0.6, fs / 90);
       ctx.strokeText(line, pad, base);
@@ -267,6 +300,14 @@ function draw() {
       ctx.fillText(line, pad, base);
     }
   });
+}
+
+// Подгоняем печатный шрифт: высота заглавной = 80% от верхней линейки
+function fitPrint(line, fs, ascH) {
+  ctx.font = `italic 500 ${fs}px ${FONT_P}`;
+  const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.63;
+  const size = Math.max(8, fs * (ascH * 0.8) / capH);
+  return `italic 500 ${size.toFixed(1)}px ${FONT_P}`;
 }
 
 // Горизонтальная линия
@@ -278,7 +319,10 @@ function hLine(y, color, w, width) {
 // ===== Ждём загрузки шрифта (с кириллицей), потом рисуем =====
 function loadAndDraw() {
   const sample = txt.value + PRESETS.join("");
-  document.fonts.load(`40px "Great Vibes"`, sample).then(draw, draw);
+  Promise.all([
+    document.fonts.load(`40px "Great Vibes"`, sample),
+    document.fonts.load(`italic 500 40px "Cormorant Infant"`, sample)
+  ]).then(draw, draw);
 }
 
 txt.addEventListener("input", () => { save(); loadAndDraw(); });
